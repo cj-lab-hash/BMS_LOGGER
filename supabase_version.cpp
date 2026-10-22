@@ -177,10 +177,10 @@ void setup()
     Serial.begin(115200);
 
     
+//if supabase connection is okay enable this two comment out functions
+    // NimBLEDevice::init("");
 
-    NimBLEDevice::init("");
-
-    scanForBMS();
+    // scanForBMS();
 
     connectWifi();
 }
