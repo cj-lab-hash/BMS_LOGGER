@@ -1,8 +1,8 @@
 #include <NimBLEDevice.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-const char* WIFI_SSID = "Bonaks!";
-const char* WIFI_PASSWORD = "C@rleigh_Call1xta";
+const char* WIFI_SSID = "WIFI_NAME";
+const char* WIFI_PASSWORD = "WIFI_PASSWORD";
 const char* SUPABASE_URL =
 "https://YOURPROJECT.supabase.co/rest/v1/battery_logs";
 
