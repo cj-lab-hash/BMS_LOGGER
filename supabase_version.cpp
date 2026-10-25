@@ -1,6 +1,10 @@
 #include <NimBLEDevice.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
 
 String getBatteryJson();
 void printBatteryData();
@@ -19,6 +23,9 @@ const char* SUPABASE_KEY =
 
 //need to enabled rls in supabase
 
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH,SCREEN_HEIGHT,&Wire,-1);
 struct BatteryData {
   float packVoltage = 0;
   float current = 0;
@@ -272,6 +279,7 @@ Serial.println("====================");
       ((pData[10] << 8) | pData[11]) / 1000.0;
     
     printBatteryData();
+    updateOLED();
 readyToUpload = true;
 }
 
@@ -313,13 +321,107 @@ public:
     }
   }
 };
+void updateOLED() {
 
+  display.clearDisplay();
+
+  display.setTextSize(1);
+
+  display.setCursor(0,0);
+  display.println("BMS Dashboard");
+
+  display.setCursor(0,12);
+  display.print("SOC: ");
+  display.print(battery.soc,1);
+  display.println("%");
+
+  display.setCursor(0,22);
+  display.print("V: ");
+  display.print(battery.packVoltage,2);
+  display.println("V");
+
+  display.setCursor(64,22);
+  display.print("I: ");
+  display.print(battery.current,2);
+  display.println("A");
+
+  float power =
+    battery.packVoltage *
+    battery.current;
+  float abspower = abs(power);
+
+  float remainingWH =
+  battery.remainingCapacity *
+  battery.packVoltage;
+
+  float hours = 0;
+  if (abspower > 0.1) {
+      hours = remainingWH / abspower;
+  }  
+  float fullWh =
+  battery.ratedCapacity *
+  battery.packVoltage;
+  float missingWh =
+  fullWh - remainingWH;
+
+  int hrs = (int)hours;
+  int mins = (int)((hours -hrs) * 60);
+  if (mins >= 60) {
+    hrs++;
+    mins = 0;
+  }
+  display.setCursor(0,32);
+  display.print("P: ");
+  display.print(power,1);
+  display.println("W");
+
+  display.setCursor(0,42);
+  display.print("Ah: ");
+  display.print(
+    battery.remainingCapacity,
+    1
+  );
+
+  display.print("/");
+  display.print(
+    battery.ratedCapacity,
+    0
+  );
+
+  display.setCursor(0,52);
+
+  if (battery.current > 0)
+    {
+      hours = missingWh / abspower;
+    } else if(battery.current < 0) {
+      hours = remainingWH /abspower;
+    } else {
+      display.print("Idle");
+    }
+    display.print(hrs);
+    display.print("h ");
+    display.print(mins);
+    display.print("m");
+
+  display.display();
+}
 void setup() {
 
   Serial.begin(115200);
   delay(3000);
+  Wire.begin(21,22);
+  if (!display.begin(SSD1306_SWITCHCAPVCC,0X3C)) {
+    Serial.println("OLED FAILED");
+    while (true);
+  }
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setCursor(0,0);
+  display.println("BMS MONITOR");
+  display.display();
 
-  Serial.println("INIT");
+  Serial.println("BOOTING");
 
   Serial.println("Connecting WiFi...");
 
