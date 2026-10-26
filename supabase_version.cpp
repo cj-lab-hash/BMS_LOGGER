@@ -26,6 +26,8 @@ const char* SUPABASE_KEY =
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH,SCREEN_HEIGHT,&Wire,-1);
+#define BUZZER_PIN 25
+
 struct BatteryData {
   float packVoltage = 0;
   float current = 0;
@@ -321,33 +323,48 @@ public:
     }
   }
 };
+
+void beep(int duration) {
+
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(duration);
+  digitalWrite(BUZZER_PIN, LOW);
+}
+void beepPattern(
+  int count,
+  int duration
+) {
+  for (int i = 0; i < count; i++) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(duration);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(duration);
+  }
+}
+
+unsigned long lastAlarm = 0;
+
+void checkAlarms() {
+  if (battery.soc < 10 && millis() - lastAlarm > 30000) {
+    beepPattern(3, 100);
+    lastAlarm = millis();
+  }
+  if (battery.soc >= 10 && battery.soc < 20 && millis() - lastAlarm > 30000) {
+    beepPattern(1, 300);
+    lastAlarm = millis();
+  }
+  if (!client || !client->isConnected()) {
+    beepPattern(4, 100);
+  }
+  
+}
+
 void updateOLED() {
-
-  display.clearDisplay();
-
-  display.setTextSize(1);
-
-  display.setCursor(0,0);
-  display.println("BMS Dashboard");
-
-  display.setCursor(0,12);
-  display.print("SOC: ");
-  display.print(battery.soc,1);
-  display.println("%");
-
-  display.setCursor(0,22);
-  display.print("V: ");
-  display.print(battery.packVoltage,2);
-  display.println("V");
-
-  display.setCursor(64,22);
-  display.print("I: ");
-  display.print(battery.current,2);
-  display.println("A");
-
+  
   float power =
     battery.packVoltage *
     battery.current;
+
   float abspower = abs(power);
 
   float remainingWH =
@@ -364,52 +381,109 @@ void updateOLED() {
   float missingWh =
   fullWh - remainingWH;
 
+  float hours = 0;
+
+  if (abspower > 0.1) {
+
+      if (battery.current > 0) {
+        hours = missingWh / abspower;
+
+  }  else if (battery.current < 0) {
+    hours = remainingWH /abspower;
+  } 
+  }
+
+  display.clearDisplay();
+
+  display.setTextSize(1);
+
+  display.setCursor(0,0);
+  display.println("BMS Dashboard");
+
+  display.setCursor(0,12);
+  display.print("SOC: ");
+  display.print(battery.soc,1);
+  display.println("%");
+  display.setCursor(70,12);
+  display.print((int)remainingWH);
+  display.print("Wh");
+
+  display.setCursor(0,22);
+  display.print("V: ");
+  display.print(battery.packVoltage,2);
+  display.println("V");
+
+  display.setCursor(64,22);
+  display.print("I: ");
+  display.print(battery.current,2);
+  display.println("A");
+
   int hrs = (int)hours;
   int mins = (int)((hours -hrs) * 60);
   if (mins >= 60) {
     hrs++;
     mins = 0;
   }
+
   display.setCursor(0,32);
   display.print("P: ");
   display.print(power,1);
   display.println("W");
 
   display.setCursor(0,42);
-  display.print("Ah: ");
-  display.print(
-    battery.remainingCapacity,
-    1
-  );
+  display.drawRect(0, 40, 90, 14, WHITE);
+  display.fillRect(90, 44, 4, 6, WHITE);
+  
+  int fillWidth = (battery.soc / 100.0) * 88;
 
-  display.print("/");
-  display.print(
-    battery.ratedCapacity,
-    0
-  );
-
-  display.setCursor(0,52);
-
-  if (battery.current > 0)
-    {
-      hours = missingWh / abspower;
-    } else if(battery.current < 0) {
-      hours = remainingWH /abspower;
-    } else {
-      display.print("Idle");
+  if (battery.soc < 10) {
+    if ((millis() / 500) % 2) {
+      display.fillRect(
+        1,
+        41,
+        fillWidth,
+        12,
+        WHITE
+      );
+      display.setCursor(100,43);
+      display.print((int)battery.soc);
+      display.print("%");
     }
+  }
+  else {
+    display.fillRect(
+      1,
+      41,
+      fillWidth,
+      12,
+      WHITE
+    );
+  }
+
+  display.setCursor(0,55);
+  if (battery.current > 0) {
+    dispaly.print("CHG:");
     display.print(hrs);
     display.print("h ");
     display.print(mins);
     display.print("m");
-
+  } else if (battery.current < 0) {
+    display.print("DIS:");
+    display.print(hrs);
+    display.print("h ");
+    display.print(mins);
+    display.print("m");
+  } else {
+    display.print("IDL");
+  }
   display.display();
+
 }
 void setup() {
 
   Serial.begin(115200);
   delay(3000);
-  Wire.begin(21,22);
+  Wire.begin(21,22); //21-sda, 22-sck
   if (!display.begin(SSD1306_SWITCHCAPVCC,0X3C)) {
     Serial.println("OLED FAILED");
     while (true);
@@ -420,7 +494,8 @@ void setup() {
   display.setCursor(0,0);
   display.println("BMS MONITOR");
   display.display();
-
+  pinMode(BUZZER_PIN,OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
   Serial.println("BOOTING");
 
   Serial.println("Connecting WiFi...");
@@ -568,4 +643,6 @@ void loop() {
 
   uploadToSupabase();
 }
+checkAlarms();
+delay(200);
 }
