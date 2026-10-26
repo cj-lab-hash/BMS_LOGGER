@@ -28,6 +28,8 @@ const char* SUPABASE_KEY =
 Adafruit_SSD1306 display(SCREEN_WIDTH,SCREEN_HEIGHT,&Wire,-1);
 #define BUZZER_PIN 25
 
+
+
 struct BatteryData {
   float packVoltage = 0;
   float current = 0;
@@ -43,6 +45,9 @@ struct BatteryData {
 
   String deviceName;
 };
+
+bool bluetoothConnected = false;
+bool wifiConnected = false;
 
 BatteryData battery;
 
@@ -234,10 +239,14 @@ void notifyCallback(
 
 battery.ratedCapacity =
   ((pData[10] << 8) | pData[11]) / 100.0;
-
-battery.soc =
+if (battery.ratedCapacity > 0) {
+  battery.soc =
   (battery.remainingCapacity /
    battery.ratedCapacity) * 100.0;
+} else {
+  battery.soc = 0;
+}
+
 
     int16_t rawCurrent =
       (int16_t)((pData[6] << 8) | pData[7]);
@@ -281,7 +290,7 @@ Serial.println("====================");
       ((pData[10] << 8) | pData[11]) / 1000.0;
     
     printBatteryData();
-    updateOLED();
+    // updateOLED();
 readyToUpload = true;
 }
 
@@ -353,10 +362,60 @@ void checkAlarms() {
     beepPattern(1, 300);
     lastAlarm = millis();
   }
-  if (!client || !client->isConnected()) {
+ 
+  if (!bluetoothConnected) {
+
+  static unsigned long lastBTAlarm = 0;
+
+  if (millis() - lastBTAlarm > 10000) {
+
     beepPattern(4, 100);
+
+    lastBTAlarm = millis();
+
   }
-  
+}
+if (!wifiConnected) {
+
+  static unsigned long lastWiFiAlarm = 0;
+
+  if (millis() - lastWiFiAlarm > 30000) {
+
+    beepPattern(2, 200);
+
+    lastWiFiAlarm = millis();
+
+  }
+}
+
+float minCell =
+  min(
+      min(battery.cell1,battery.cell2),
+      min(battery.cell3,battery.cell4)
+  );
+
+float maxCell =
+  max(
+      max(battery.cell1,battery.cell2),
+      max(battery.cell3,battery.cell4)
+  );
+
+float delta =
+  maxCell - minCell;
+
+  if (delta > 0.05) {
+
+    static unsigned long lastDeltaAlarm = 0;
+
+    if (millis() - lastDeltaAlarm > 60000) {
+
+        beepPattern(2,200);
+
+        lastDeltaAlarm = millis();
+
+    }
+}
+
 }
 
 void updateOLED() {
@@ -370,11 +429,8 @@ void updateOLED() {
   float remainingWH =
   battery.remainingCapacity *
   battery.packVoltage;
+  
 
-  float hours = 0;
-  if (abspower > 0.1) {
-      hours = remainingWH / abspower;
-  }  
   float fullWh =
   battery.ratedCapacity *
   battery.packVoltage;
@@ -398,7 +454,23 @@ void updateOLED() {
   display.setTextSize(1);
 
   display.setCursor(0,0);
-  display.println("BMS Dashboard");
+  display.print("BMS");
+
+display.setCursor(35,0);
+
+display.print(
+  bluetoothConnected
+  ? "BT"
+  : "BX"
+);
+
+display.setCursor(55,0);
+
+display.print(
+  wifiConnected
+  ? "WF"
+  : "WX"
+);
 
   display.setCursor(0,12);
   display.print("SOC: ");
@@ -434,7 +506,7 @@ void updateOLED() {
   display.drawRect(0, 40, 90, 14, WHITE);
   display.fillRect(90, 44, 4, 6, WHITE);
   
-  int fillWidth = (battery.soc / 100.0) * 88;
+  int fillWidth = (battery.soc / 100.0) * 88, 0, 88;
 
   if (battery.soc < 10) {
     if ((millis() / 500) % 2) {
@@ -445,10 +517,9 @@ void updateOLED() {
         12,
         WHITE
       );
-      display.setCursor(100,43);
-      display.print((int)battery.soc);
-      display.print("%");
+
     }
+
   }
   else {
     display.fillRect(
@@ -459,10 +530,12 @@ void updateOLED() {
       WHITE
     );
   }
-
+  display.setCursor(100,43);
+  display.print((int)battery.soc);
+  display.print("%");
   display.setCursor(0,55);
   if (battery.current > 0) {
-    dispaly.print("CHG:");
+    display.print("CHG:");
     display.print(hrs);
     display.print("h ");
     display.print(mins);
@@ -515,13 +588,13 @@ void setup() {
   Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-
+    wifiConnected = true;
     Serial.println("WiFi Connected");
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
 
   } else {
-
+    wifiConnected = false;
     Serial.println("WiFi FAILED");
   }
 
@@ -542,6 +615,10 @@ void setup() {
   scan->start(0, false, true);
 }
 void loop() {
+  static unsigned long lastOLED = 0;
+
+  bluetoothConnected = client && client->isConnected();
+  wifiConnected = WiFi.status() == WL_CONNECTED;
 
   if (doConnect && bmsDevice) {
 
@@ -557,7 +634,10 @@ void loop() {
       return;
     }
 
+
     Serial.println("CONNECTED!");
+
+    
 
     NimBLERemoteService* service =
         client->getService(SERVICE_UUID);
@@ -634,6 +714,15 @@ void loop() {
   }
 
   delay(500);
+  
+
+if (millis() - lastOLED > 500) {
+
+  updateOLED();
+
+  lastOLED = millis();
+
+}
   if (readyToUpload &&
     millis() - lastUpload > 10000) {
 
@@ -644,5 +733,5 @@ void loop() {
   uploadToSupabase();
 }
 checkAlarms();
-delay(200);
+delay(100);
 }
