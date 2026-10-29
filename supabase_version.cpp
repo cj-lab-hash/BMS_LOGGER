@@ -540,7 +540,10 @@ display.print(
   display.drawRect(0, 40, 90, 14, WHITE);
   display.fillRect(90, 44, 4, 6, WHITE);
   
-  int fillWidth = (battery.soc / 100.0) * 88, 0, 88;
+  int fillWidth = constrain((battery.soc / 100.0) * 88,
+    0,
+    88
+  );
 
   if (battery.soc < 10) {
     if ((millis() / 500) % 2) {
@@ -849,7 +852,7 @@ void setup() {
 xTaskCreatePinnedToCore(
     commsTask,
     "CommsTask",
-    10000,
+    12000,
     NULL,
     1,
     &commsTaskHandle,
@@ -859,7 +862,7 @@ xTaskCreatePinnedToCore(
 xTaskCreatePinnedToCore(
     uiTask,
     "UiTask",
-    10000,
+    12000,
     NULL,
     1,
     &uiTaskHandle,
@@ -928,14 +931,14 @@ void loop() {
       sizeof(cmdDeviceInfo),
       false);
 
-    // delay(500);
+    delay(300);
 
     writeChar->writeValue(
       cmdBasicInfo,
       sizeof(cmdBasicInfo),
       false);
 
-    // delay(500);
+    delay(300);
 
     writeChar->writeValue(
       cmdCellVoltage,
@@ -948,7 +951,7 @@ void loop() {
   if (client &&
       client->isConnected() &&
       writeChar &&
-      millis() - lastPoll > 10000) {
+      millis() - lastPoll > 2000) {
 
     lastPoll = millis();
 
