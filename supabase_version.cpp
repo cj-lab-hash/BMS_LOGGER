@@ -745,7 +745,7 @@ void commsTask(void *pvParameters) {
       WiFi.status() == WL_CONNECTED;
 
     if (readyToUpload &&
-        millis() - lastUpload > 10000) {
+        millis() - lastUpload > 2000) {
 
       readyToUpload = false;
 
@@ -938,7 +938,7 @@ void loop() {
       sizeof(cmdBasicInfo),
       false);
 
-    delay(300);
+    delay(100);
 
     writeChar->writeValue(
       cmdCellVoltage,
