@@ -312,6 +312,7 @@ Serial.println("====================");
     printBatteryData();
     // updateOLED();
 readyToUpload = true;
+
 }
 
 
@@ -779,7 +780,7 @@ void commsTask(void *pvParameters) {
       WiFi.status() == WL_CONNECTED;
 
     if (readyToUpload &&
-        millis() - lastUpload > 2000) {
+        millis() - lastUpload > 3000) {
 
       readyToUpload = false;
 
@@ -787,6 +788,7 @@ void commsTask(void *pvParameters) {
 
       uploadToSupabase();
     }
+    
 
     if (millis() - lastWeatherUpdate >
         1800000UL) {
