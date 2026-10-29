@@ -665,7 +665,7 @@ void tempScreen() {
 
   display.clearDisplay();
 
-  display.setCursor(0,0);
+  display.setCursor(20,0);
   display.print("ROOM DATA");
 
   display.setCursor(0,20);
@@ -686,7 +686,7 @@ void weatherScreen() {
 
   display.clearDisplay();
 
-  display.setCursor(0,0);
+  display.setCursor(45,0);
   display.print("WEATHER");
 
   display.setCursor(0,16);
@@ -736,13 +736,46 @@ void timeScreen() {
     display.print(getTimeString());
     display.display();
 }
+void systemScreen() {
+
+     unsigned long uptime = millis() / 1000;
+    unsigned long hours = uptime / 3600;
+    unsigned long minutes = (uptime % 3600) / 60;
+    unsigned long seconds = uptime % 60;
+
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setCursor(50,0);
+    display.print("SYSTEM");
+
+    display.setCursor(0,15);
+    display.print("Heap:");
+    display.print(ESP.getFreeHeap());
+
+    display.setCursor(0,30);
+    display.print("RSSI:");
+    display.print(WiFi.RSSI());
+
+    display.setCursor(0,45);
+    display.print("Uptime:");
+    display.print(hours);
+    display.print(":");
+    if (minutes < 10)
+        display.print("0");
+    display.print(minutes);
+    display.print(":");
+    if (seconds < 10)
+        display.print("0");
+    display.print(seconds);
+    display.display();
+}
 void drawCurrentScreen() {
 
   if (millis() - lastScreenChange > 5000) {
 
     currentScreen++;
 
-    if (currentScreen > 4)
+    if (currentScreen > 5)
       currentScreen = 1;
 
     lastScreenChange = millis();
@@ -761,8 +794,13 @@ void drawCurrentScreen() {
     case 3:
       weatherScreen();
       break;
+
     case 4:
-    timeScreen();
+      timeScreen();
+      break;
+
+    case 5:
+      systemScreen();
       break;
   }
 }
