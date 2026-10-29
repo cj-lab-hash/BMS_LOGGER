@@ -645,8 +645,30 @@ void weather() {
         weatherText = "Rain";
         break;
 
+      case 80:
+      case 81:
+      case 82:
+        weatherText = "Showers";
+        break;
+
+      case 51:
+      case 53:
+      case 55:
+        weatherText = "Drizzle";
+        break;
+
+      case 66:
+      case 67:
+        weatherText = "Freezing Rain";
+      break;
+
       case 95:
         weatherText = "Storm";
+        break;
+
+      case 96:
+      case 99:
+        weatherText = "Thunder";
         break;
 
       default:
@@ -948,6 +970,7 @@ configTime(
   "pool.ntp.org",
   "time.nist.gov"
 );
+weather();
 
 }
 void loop() {
