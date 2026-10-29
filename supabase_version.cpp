@@ -6,7 +6,7 @@
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
-
+#include <time.h>
 
 String getBatteryJson();
 void printBatteryData();
@@ -703,14 +703,45 @@ void weatherScreen() {
 
   display.display();
 }
+//helper for the time screen
+String getTimeString() {
 
+    struct tm timeinfo;
+
+    if (!getLocalTime(&timeinfo)) {
+        return "--:--:--";
+    }
+
+    char buffer[20];
+
+    strftime(
+        buffer,
+        sizeof(buffer),
+        "%H:%M:%S",
+        &timeinfo
+    );
+
+    return String(buffer);
+}
+
+void timeScreen() {
+    display.clearDisplay();
+    display.setTextColor(WHITE);
+    display.setTextSize(1);
+    display.setCursor(30,0);
+    display.print("CURRENT TIME");
+    display.setTextSize(2);
+    display.setCursor(10,25);
+    display.print(getTimeString());
+    display.display();
+}
 void drawCurrentScreen() {
 
   if (millis() - lastScreenChange > 5000) {
 
     currentScreen++;
 
-    if (currentScreen > 3)
+    if (currentScreen > 4)
       currentScreen = 1;
 
     lastScreenChange = millis();
@@ -728,6 +759,9 @@ void drawCurrentScreen() {
 
     case 3:
       weatherScreen();
+      break;
+    case 4:
+    timeScreen();
       break;
   }
 }
@@ -867,6 +901,12 @@ xTaskCreatePinnedToCore(
     1,
     &uiTaskHandle,
     1
+);
+configTime(
+  8 * 3600,
+  0,
+  "pool.ntp.org",
+  "time.nist.gov"
 );
 
 }
