@@ -4,6 +4,8 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <DHT.h>
+#include <ArduinoJson.h>
 
 
 String getBatteryJson();
@@ -50,6 +52,24 @@ bool bluetoothConnected = false;
 bool wifiConnected = false;
 
 BatteryData battery;
+
+DHT dht(26, DHT11);
+
+float roomTemp = 0;
+float roomHum = 0;
+
+String weatherText = "--";
+float weatherTemp = 0;
+float weatherRain = 0;
+int weatherCode = 0;
+
+unsigned long lastWeatherUpdate = 0;
+
+int currentScreen = 1;
+unsigned long lastScreenChange = 0;
+
+TaskHandle_t commsTaskHandle = NULL;
+TaskHandle_t uiTaskHandle = NULL;
 
 static NimBLEUUID SERVICE_UUID("0000ff00-0000-1000-8000-00805f9b34fb"); //get the actual sevice uuid of the ble device
 static NimBLEUUID RX_UUID("0000ff01-0000-1000-8000-00805f9b34fb"); //common receive data for decode
@@ -415,7 +435,21 @@ float delta =
 
     }
 }
+if (roomTemp > 35 &&
+    millis() - lastAlarm > 30000) {
 
+  beepPattern(1,1000);
+
+  lastAlarm = millis();
+}
+
+if (roomHum > 60 &&
+    millis() - lastAlarm > 30000) {
+
+  beepPattern(5,500);
+
+  lastAlarm = millis();
+}
 }
 
 void updateOLED() {
@@ -534,6 +568,7 @@ display.print(
   display.print((int)battery.soc);
   display.print("%");
   display.setCursor(0,55);
+
   if (battery.current > 0) {
     display.print("CHG:");
     display.print(hrs);
@@ -552,6 +587,200 @@ display.print(
   display.display();
 
 }
+//weather update
+void weather() {
+
+  if (WiFi.status() != WL_CONNECTED)
+    return;
+
+  HTTPClient http;
+
+  http.begin(
+    "https://api.open-meteo.com/v1/forecast?latitude=14.311823&longitude=120.917901&current=temperature_2m,rain,weather_code"
+  );
+
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+
+    String payload = http.getString();
+
+    DynamicJsonDocument doc(2048);
+
+    deserializeJson(doc, payload);
+
+    weatherTemp =
+      doc["current"]["temperature_2m"];
+
+    weatherRain =
+      doc["current"]["rain"];
+
+    weatherCode =
+      doc["current"]["weather_code"];
+
+    switch(weatherCode) {
+
+      case 0:
+        weatherText = "Sunny";
+        break;
+
+      case 1:
+      case 2:
+      case 3:
+        weatherText = "Cloudy";
+        break;
+
+      case 45:
+      case 48:
+        weatherText = "Fog";
+        break;
+
+      case 61:
+      case 63:
+      case 65:
+        weatherText = "Rain";
+        break;
+
+      case 95:
+        weatherText = "Storm";
+        break;
+
+      default:
+        weatherText = "Unknown";
+    }
+  }
+
+  http.end();
+}
+
+//temperature screen
+void tempScreen() {
+
+  roomTemp = dht.readTemperature();
+  roomHum = dht.readHumidity();
+
+  display.clearDisplay();
+
+  display.setCursor(0,0);
+  display.print("ROOM DATA");
+
+  display.setCursor(0,20);
+  display.print("Temp: ");
+  display.print(roomTemp,1);
+  display.print(" C");
+
+  display.setCursor(0,40);
+  display.print("Hum : ");
+  display.print(roomHum,1);
+  display.print(" %");
+
+  display.display();
+}
+
+//weatherscreen
+void weatherScreen() {
+
+  display.clearDisplay();
+
+  display.setCursor(0,0);
+  display.print("WEATHER");
+
+  display.setCursor(0,16);
+  display.print("Temp:");
+  display.print(weatherTemp,1);
+  display.print("C");
+
+  display.setCursor(0,32);
+  display.print("Rain:");
+  display.print(weatherRain,1);
+  display.print("mm");
+
+  display.setCursor(0,48);
+  display.print(weatherText);
+
+  display.display();
+}
+
+void drawCurrentScreen() {
+
+  if (millis() - lastScreenChange > 5000) {
+
+    currentScreen++;
+
+    if (currentScreen > 3)
+      currentScreen = 1;
+
+    lastScreenChange = millis();
+  }
+
+  switch(currentScreen) {
+
+    case 1:
+      updateOLED();
+      break;
+
+    case 2:
+      tempScreen();
+      break;
+
+    case 3:
+      weatherScreen();
+      break;
+  }
+}
+
+//core 0 task
+void commsTask(void *pvParameters) {
+
+  while(true) {
+
+    bluetoothConnected =
+      client &&
+      client->isConnected();
+
+    wifiConnected =
+      WiFi.status() == WL_CONNECTED;
+
+    if (readyToUpload &&
+        millis() - lastUpload > 10000) {
+
+      readyToUpload = false;
+
+      lastUpload = millis();
+
+      uploadToSupabase();
+    }
+
+    if (millis() - lastWeatherUpdate >
+        1800000UL) {
+
+      weather();
+
+      lastWeatherUpdate = millis();
+    }
+
+    vTaskDelay(
+      100 / portTICK_PERIOD_MS
+    );
+  }
+}
+
+//core 1 task
+void uiTask(void *pvParameters) {
+
+  while(true) {
+
+    drawCurrentScreen();
+
+    checkAlarms();
+
+    vTaskDelay(
+      200 / portTICK_PERIOD_MS
+    );
+  }
+}
+
+
 void setup() {
 
   Serial.begin(115200);
@@ -613,12 +842,37 @@ void setup() {
   Serial.println("SCANNING...");
 
   scan->start(0, false, true);
+
+
+  dht.begin();
+
+xTaskCreatePinnedToCore(
+    commsTask,
+    "CommsTask",
+    10000,
+    NULL,
+    1,
+    &commsTaskHandle,
+    0
+);
+
+xTaskCreatePinnedToCore(
+    uiTask,
+    "UiTask",
+    10000,
+    NULL,
+    1,
+    &uiTaskHandle,
+    1
+);
+
 }
 void loop() {
   static unsigned long lastOLED = 0;
 
-  bluetoothConnected = client && client->isConnected();
-  wifiConnected = WiFi.status() == WL_CONNECTED;
+
+  // bluetoothConnected = client && client->isConnected();
+  // wifiConnected = WiFi.status() == WL_CONNECTED;
 
   if (doConnect && bmsDevice) {
 
@@ -667,21 +921,21 @@ void loop() {
 
     Serial.println("NOTIFICATION ENABLED");
 
-    delay(1000);
+    // delay(10);
 
     writeChar->writeValue(
       cmdDeviceInfo,
       sizeof(cmdDeviceInfo),
       false);
 
-    delay(500);
+    // delay(500);
 
     writeChar->writeValue(
       cmdBasicInfo,
       sizeof(cmdBasicInfo),
       false);
 
-    delay(500);
+    // delay(500);
 
     writeChar->writeValue(
       cmdCellVoltage,
@@ -713,25 +967,25 @@ void loop() {
       false);
   }
 
-  delay(500);
+  // delay(500);
   
 
-if (millis() - lastOLED > 500) {
+// if (millis() - lastOLED > 500) {
 
-  updateOLED();
+//   updateOLED();
 
-  lastOLED = millis();
+//   lastOLED = millis();
 
-}
-  if (readyToUpload &&
-    millis() - lastUpload > 10000) {
+// }
+//   if (readyToUpload &&
+//     millis() - lastUpload > 10000) {
 
-  readyToUpload = false;
+//   readyToUpload = false;
 
-  lastUpload = millis();
+//   lastUpload = millis();
 
-  uploadToSupabase();
-}
-checkAlarms();
-delay(100);
+//   uploadToSupabase();
+// }
+// checkAlarms();
+delay(1);
 }
