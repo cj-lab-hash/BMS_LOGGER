@@ -12,8 +12,14 @@
 String getBatteryJson();
 void printBatteryData();
 void uploadToSupabase();
+
+
+
 unsigned long lastUpload = 0;
-bool readyToUpload = false;
+unsigned long lastReconnectAttempt = 0;
+unsigned long lastWeatherUpdate = 0;
+unsigned long lastScreenChange = 0;
+unsigned long lastPoll = 0;
 
 const char* WIFI_SSID = ""; //input wifi name
 const char* WIFI_PASSWORD = ""; //input password of wifi
@@ -51,6 +57,10 @@ struct BatteryData {
 
 bool bluetoothConnected = false;
 bool wifiConnected = false;
+bool doConnect = false;
+bool readyToUpload = false;
+
+static bool reconnectStarted = false;
 
 BatteryData battery;
 
@@ -64,10 +74,10 @@ float weatherTemp = 0;
 float weatherRain = 0;
 int weatherCode = 0;
 
-unsigned long lastWeatherUpdate = 0;
+
 
 int currentScreen = 1;
-unsigned long lastScreenChange = 0;
+
 
 TaskHandle_t commsTaskHandle = NULL;
 TaskHandle_t uiTaskHandle = NULL;
@@ -80,8 +90,8 @@ NimBLEAdvertisedDevice* bmsDevice = nullptr;
 NimBLERemoteCharacteristic* writeChar = nullptr;
 NimBLEClient* client = nullptr;
 
-bool doConnect = false;
-unsigned long lastPoll = 0;
+
+
 
 uint8_t cmdBasicInfo[] = {
   0xDD, 0xA5, 0x03, 0x00, 0xFF, 0xFD, 0x77
@@ -95,57 +105,57 @@ uint8_t cmdDeviceInfo[] = {
   0xDD, 0xA5, 0x05, 0x00, 0xFF, 0xFB, 0x77
 };
 
-void printBatteryData() {
+// void printBatteryData() {
 
-  Serial.println();
-  Serial.println("========== BMS ==========");
+//   Serial.println();
+//   Serial.println("========== BMS ==========");
 
-  Serial.print("Device: ");
-  Serial.println(battery.deviceName);
-  Serial.print("Remaining Ah: ");
-Serial.println(battery.remainingCapacity);
+//   Serial.print("Device: ");
+//   Serial.println(battery.deviceName);
+//   Serial.print("Remaining Ah: ");
+//   Serial.println(battery.remainingCapacity);
 
-Serial.print("Rated Ah: ");
-Serial.println(battery.ratedCapacity);
+//   Serial.print("Rated Ah: ");
+//   Serial.println(battery.ratedCapacity);
 
-Serial.print("SOC: ");
-Serial.print(battery.soc, 1);
-Serial.println("%");
-  Serial.print("Voltage: ");
-  Serial.print(battery.packVoltage, 2);
-  Serial.println(" V");
+//   Serial.print("SOC: ");
+//   Serial.print(battery.soc, 1);
+//   Serial.println("%");
+//   Serial.print("Voltage: ");
+//   Serial.print(battery.packVoltage, 2);
+//   Serial.println(" V");
 
-  Serial.print("Current: ");
-  Serial.print(battery.current, 2);
-  Serial.println(" A");
+//   Serial.print("Current: ");
+//   Serial.print(battery.current, 2);
+//   Serial.println(" A");
 
-  Serial.print("Cycles: ");
-  Serial.println(battery.cycles);
+//   Serial.print("Cycles: ");
+//   Serial.println(battery.cycles);
 
-  Serial.println();
+//   Serial.println();
 
-  Serial.print("Cell1: ");
-  Serial.print(battery.cell1, 3);
-  Serial.println(" V");
+//   Serial.print("Cell1: ");
+//   Serial.print(battery.cell1, 3);
+//   Serial.println(" V");
 
-  Serial.print("Cell2: ");
-  Serial.print(battery.cell2, 3);
-  Serial.println(" V");
+//   Serial.print("Cell2: ");
+//   Serial.print(battery.cell2, 3);
+//   Serial.println(" V");
 
-  Serial.print("Cell3: ");
-  Serial.print(battery.cell3, 3);
-  Serial.println(" V");
+//   Serial.print("Cell3: ");
+//   Serial.print(battery.cell3, 3);
+//   Serial.println(" V");
 
-  Serial.print("Cell4: ");
-  Serial.print(battery.cell4, 3);
-  Serial.println(" V");
+//   Serial.print("Cell4: ");
+//   Serial.print(battery.cell4, 3);
+//   Serial.println(" V");
 
-  Serial.println("=========================");
-  Serial.println();
-  Serial.println("JSON:");
-Serial.println(getBatteryJson());
+//   Serial.println("=========================");
+//   Serial.println();
+//   Serial.println("JSON:");
+//   Serial.println(getBatteryJson());
 
-}
+// }
 String getBatteryJson() {
 
   String json = "{";
@@ -229,6 +239,7 @@ void uploadToSupabase() {
 
   http.end();
 }
+
 void notifyCallback(
     NimBLERemoteCharacteristic* pRemoteCharacteristic,
     uint8_t* pData,
@@ -377,52 +388,52 @@ unsigned long lastAlarm = 0;
 
 void checkAlarms() {
   if (battery.soc < 10 && millis() - lastAlarm > 30000) {
-    beepPattern(3, 100);
+    beepPattern(3, 1000);
     lastAlarm = millis();
   }
   if (battery.soc >= 10 && battery.soc < 20 && millis() - lastAlarm > 30000) {
-    beepPattern(1, 300);
+    beepPattern(1, 500);
     lastAlarm = millis();
   }
  
   if (!bluetoothConnected) {
 
-  static unsigned long lastBTAlarm = 0;
+    static unsigned long lastBTAlarm = 0;
 
-  if (millis() - lastBTAlarm > 10000) {
+    if (millis() - lastBTAlarm > 10000) {
 
-    beepPattern(4, 100);
+    beepPattern(5, 100);
 
     lastBTAlarm = millis();
 
-  }
-}
-if (!wifiConnected) {
+      }
+    }
+  if (!wifiConnected) {
 
-  static unsigned long lastWiFiAlarm = 0;
+    static unsigned long lastWiFiAlarm = 0;
 
-  if (millis() - lastWiFiAlarm > 30000) {
+    if (millis() - lastWiFiAlarm > 30000) {
 
-    beepPattern(2, 200);
+    beepPattern(3, 200);
 
     lastWiFiAlarm = millis();
 
+    }
   }
-}
 
-float minCell =
+  float minCell =
   min(
       min(battery.cell1,battery.cell2),
       min(battery.cell3,battery.cell4)
   );
 
-float maxCell =
+  float maxCell =
   max(
       max(battery.cell1,battery.cell2),
       max(battery.cell3,battery.cell4)
   );
 
-float delta =
+  float delta =
   maxCell - minCell;
 
   if (delta > 0.05) {
@@ -437,21 +448,21 @@ float delta =
 
     }
 }
-if (roomTemp > 35 &&
+  if (roomTemp > 35 &&
     millis() - lastAlarm > 30000) {
 
-  beepPattern(1,1000);
+    beepPattern(1,1000);
 
-  lastAlarm = millis();
-}
+    lastAlarm = millis();
+  }
 
-if (roomHum > 60 &&
+  if (roomHum > 60 &&
     millis() - lastAlarm > 30000) {
 
   beepPattern(5,500);
 
   lastAlarm = millis();
-}
+  }
 }
 
 void updateOLED() {
@@ -999,7 +1010,7 @@ void loop() {
 
 
     Serial.println("CONNECTED!");
-
+    reconnectStarted = false;
     
 
     NimBLERemoteService* service =
@@ -1096,5 +1107,17 @@ void loop() {
 //   uploadToSupabase();
 // }
 // checkAlarms();
+
+//reconnection logic for bluetooth
+if (client && !client->isConnected() && !reconnectStarted) {
+  reconnectStarted - true;
+  Serial.println("BLE DISCONNECTED - STARTING SCAN");
+  NimBLEDevice::getScan()->start(
+    0,
+    false,
+    true
+  );
+}
+
 delay(1);
 }
