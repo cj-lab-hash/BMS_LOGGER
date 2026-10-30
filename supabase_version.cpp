@@ -307,7 +307,7 @@ void checkAlarms() {
 
     if (millis() - lastBTAlarm > 10000) {
 
-    beepPattern(5, 100);
+    beepPattern(1, 200);
 
     lastBTAlarm = millis();
 
@@ -948,7 +948,7 @@ void loop() {
       Serial.println("CONNECT FAILED");
       return;
     }
-    
+    delay(5000);
     NimBLERemoteService* service =
         client->getService(SERVICE_UUID);
 
