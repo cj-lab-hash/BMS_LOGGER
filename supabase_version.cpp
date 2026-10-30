@@ -7,6 +7,7 @@
 #include <DHT.h>
 #include <ArduinoJson.h>
 #include <time.h>
+#include <Adafruit_SH110X.h>
 
 String getBatteryJson();
 void printBatteryData();
@@ -356,16 +357,16 @@ public:
 
 void beep(int duration) {
 
-  digitalWrite(BUZZER_PIN, HIGH);
-  delay(duration);
   digitalWrite(BUZZER_PIN, LOW);
+  delay(duration);
+  digitalWrite(BUZZER_PIN, HIGH);
 }
 void beepPattern(
   int count,
   int duration
 ) {
   for (int i = 0; i < count; i++) {
-    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(BUZZER_PIN, HIGH); //check if buzzer is active high or low
     delay(duration);
     digitalWrite(BUZZER_PIN, LOW);
     delay(duration);
@@ -600,7 +601,7 @@ void weather() {
   HTTPClient http;
 
   http.begin(
-    "https://api.open-meteo.com/v1/forecast?latitude=14.311823&longitude=120.917901&current=temperature_2m,rain,weather_code"
+    "https://api.open-meteo.com/v1/forecast?latitude=14.311823&longitude=120.917901&hourly=precipitation_probability&current=temperature_2m,rain,weather_code"
   );
 
   int httpCode = http.GET();
@@ -886,17 +887,19 @@ void setup() {
   delay(3000);
   Wire.begin(21,22); //21-sda, 22-sck
   if (!display.begin(SSD1306_SWITCHCAPVCC,0X3C)) {
+  //if (!display.begin(0x3C, true )) //for SH1106X display
     Serial.println("OLED FAILED");
     while (true);
   }
   display.clearDisplay();
-  display.setTextColor(WHITE);
+  // display.setTextColor(SH1106X_WHITE); // if the display is SH1106X, set all colors like this
+  display.setTextColor(WHITE); 
   display.setTextSize(1);
   display.setCursor(0,0);
   display.println("BMS MONITOR");
   display.display();
   pinMode(BUZZER_PIN,OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(BUZZER_PIN, HIGH);
   Serial.println("BOOTING");
 
   Serial.println("Connecting WiFi...");
