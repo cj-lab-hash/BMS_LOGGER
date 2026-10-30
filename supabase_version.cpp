@@ -10,13 +10,9 @@
 #include <Adafruit_SH110X.h>
 
 String getBatteryJson();
-void printBatteryData();
 void uploadToSupabase();
 
-
-
 unsigned long lastUpload = 0;
-unsigned long lastReconnectAttempt = 0;
 unsigned long lastWeatherUpdate = 0;
 unsigned long lastScreenChange = 0;
 unsigned long lastPoll = 0;
@@ -60,7 +56,7 @@ bool wifiConnected = false;
 bool doConnect = false;
 bool readyToUpload = false;
 
-static bool reconnectStarted = false;
+
 
 BatteryData battery;
 
@@ -101,61 +97,9 @@ uint8_t cmdCellVoltage[] = {
   0xDD, 0xA5, 0x04, 0x00, 0xFF, 0xFC, 0x77
 };
 
-uint8_t cmdDeviceInfo[] = {
-  0xDD, 0xA5, 0x05, 0x00, 0xFF, 0xFB, 0x77
-};
 
-// void printBatteryData() {
 
-//   Serial.println();
-//   Serial.println("========== BMS ==========");
 
-//   Serial.print("Device: ");
-//   Serial.println(battery.deviceName);
-//   Serial.print("Remaining Ah: ");
-//   Serial.println(battery.remainingCapacity);
-
-//   Serial.print("Rated Ah: ");
-//   Serial.println(battery.ratedCapacity);
-
-//   Serial.print("SOC: ");
-//   Serial.print(battery.soc, 1);
-//   Serial.println("%");
-//   Serial.print("Voltage: ");
-//   Serial.print(battery.packVoltage, 2);
-//   Serial.println(" V");
-
-//   Serial.print("Current: ");
-//   Serial.print(battery.current, 2);
-//   Serial.println(" A");
-
-//   Serial.print("Cycles: ");
-//   Serial.println(battery.cycles);
-
-//   Serial.println();
-
-//   Serial.print("Cell1: ");
-//   Serial.print(battery.cell1, 3);
-//   Serial.println(" V");
-
-//   Serial.print("Cell2: ");
-//   Serial.print(battery.cell2, 3);
-//   Serial.println(" V");
-
-//   Serial.print("Cell3: ");
-//   Serial.print(battery.cell3, 3);
-//   Serial.println(" V");
-
-//   Serial.print("Cell4: ");
-//   Serial.print(battery.cell4, 3);
-//   Serial.println(" V");
-
-//   Serial.println("=========================");
-//   Serial.println();
-//   Serial.println("JSON:");
-//   Serial.println(getBatteryJson());
-
-// }
 String getBatteryJson() {
 
   String json = "{";
@@ -246,18 +190,7 @@ void notifyCallback(
     size_t length,
     bool isNotify) {
 
-  Serial.print("RX: ");
-
-  for (size_t i = 0; i < length; i++) {
-
-    if (pData[i] < 16)
-      Serial.print("0");
-
-    Serial.print(pData[i], HEX);
-    Serial.print(" ");
-  }
-
-  Serial.println();
+  
 
   // CMD03
   if (length >= 20 &&
@@ -288,20 +221,6 @@ if (battery.ratedCapacity > 0) {
 
     battery.cycles =
       (pData[12] << 8) | pData[13];
-      Serial.println("===== BYTE MAP =====");
-
-for(int i = 0; i < length; i++) {
-  Serial.print("[");
-  Serial.print(i);
-  Serial.print("] = 0x");
-
-  if(pData[i] < 16)
-    Serial.print("0");
-
-  Serial.println(pData[i], HEX);
-}
-
-Serial.println("====================");
   }
 
   // CMD04
@@ -321,29 +240,11 @@ Serial.println("====================");
     battery.cell4 =
       ((pData[10] << 8) | pData[11]) / 1000.0;
     
-    printBatteryData();
-    // updateOLED();
-readyToUpload = true;
+ 
+    readyToUpload = true;
 
-}
-
-
-  // CMD05
-  if (length >= 10 &&
-      pData[0] == 0xDD &&
-      pData[1] == 0x05) {
-
-    battery.deviceName = "";
-
-    for (size_t i = 4; i < length; i++) {
-      char c = (char)pData[i];
-      if (c >= 32 && c <= 126) {
-    battery.deviceName += c;
-    }
-    }
-    Serial.print("Device Name: ");
-    Serial.println(battery.deviceName);
   }
+
 }
 
 class ScanCallbacks : public NimBLEScanCallbacks {
@@ -356,6 +257,10 @@ public:
 
       Serial.println("BMS FOUND!");
 
+      if (bmsDevice) {
+        delete bmsDevice;
+        bmsDevice = nullptr;
+      }
       bmsDevice =
         new NimBLEAdvertisedDevice(*device);
 
@@ -621,7 +526,8 @@ void weather() {
 
     String payload = http.getString();
 
-    DynamicJsonDocument doc(2048);
+    // DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(512);
 
     deserializeJson(doc, payload);
 
@@ -891,6 +797,39 @@ void uiTask(void *pvParameters) {
   }
 }
 
+class ClientCallbacks : public NimBLEClientCallbacks {
+
+  void onConnect(NimBLEClient* pClient) override {
+
+    Serial.println("BLE Connected");
+    bluetoothConnected = true;
+  }
+
+  void onDisconnect(
+      NimBLEClient* pClient,
+      int reason) override {
+
+    Serial.println("BLE Disconnected");
+
+    bluetoothConnected = false;
+
+    writeChar = nullptr;
+
+    doConnect =false;
+    battery.deviceName = "DISCONNECTED";
+
+
+    Serial.println("Starting Reconnect Scan...");
+
+        if (!NimBLEDevice::getScan()->isScanning()) {
+          NimBLEDevice::getScan()->start(
+          0,
+          false,
+          true
+        );
+    }
+  }
+};
 
 void setup() {
 
@@ -988,17 +927,19 @@ weather();
 
 }
 void loop() {
-  static unsigned long lastOLED = 0;
-
-
-  // bluetoothConnected = client && client->isConnected();
-  // wifiConnected = WiFi.status() == WL_CONNECTED;
-
   if (doConnect && bmsDevice) {
 
     doConnect = false;
-
+    
+    if (client) {
+      NimBLEDevice::deleteClient(client);
+      client = nullptr;
+      }
     client = NimBLEDevice::createClient();
+    client->setClientCallbacks(
+    new ClientCallbacks(),
+    false
+    );
 
     Serial.println("CONNECTING...");
 
@@ -1007,12 +948,7 @@ void loop() {
       Serial.println("CONNECT FAILED");
       return;
     }
-
-
-    Serial.println("CONNECTED!");
-    reconnectStarted = false;
     
-
     NimBLERemoteService* service =
         client->getService(SERVICE_UUID);
 
@@ -1040,15 +976,12 @@ void loop() {
     );
 
     Serial.println("NOTIFICATION ENABLED");
-
-    // delay(10);
-
-    writeChar->writeValue(
-      cmdDeviceInfo,
-      sizeof(cmdDeviceInfo),
-      false);
-
+    Serial.println("CONNECTED!");
+    battery.deviceName = "DP04S007L4S100A";
+    beepPattern(2, 100);
+   
     delay(300);
+    
 
     writeChar->writeValue(
       cmdBasicInfo,
@@ -1086,38 +1019,5 @@ void loop() {
       sizeof(cmdCellVoltage),
       false);
   }
-
-  // delay(500);
-  
-
-// if (millis() - lastOLED > 500) {
-
-//   updateOLED();
-
-//   lastOLED = millis();
-
-// }
-//   if (readyToUpload &&
-//     millis() - lastUpload > 10000) {
-
-//   readyToUpload = false;
-
-//   lastUpload = millis();
-
-//   uploadToSupabase();
-// }
-// checkAlarms();
-
-//reconnection logic for bluetooth
-if (client && !client->isConnected() && !reconnectStarted) {
-  reconnectStarted - true;
-  Serial.println("BLE DISCONNECTED - STARTING SCAN");
-  NimBLEDevice::getScan()->start(
-    0,
-    false,
-    true
-  );
-}
-
-delay(1);
+  delay(1);
 }
